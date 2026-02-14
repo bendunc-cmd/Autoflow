@@ -7,6 +7,43 @@ export interface Profile {
   plan: "free" | "starter" | "pro";
   created_at: string;
   updated_at: string;
+  // Business profile fields for AI responses
+  business_description: string | null;
+  business_services: string | null;
+  business_phone: string | null;
+  business_address: string | null;
+  business_website: string | null;
+  response_tone: "professional" | "friendly" | "casual" | null;
+  auto_reply_enabled: boolean;
+}
+
+export interface Lead {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  message: string;
+  source: string | null;
+  urgency: "hot" | "warm" | "cold";
+  category: string | null;
+  ai_summary: string | null;
+  ai_response_sent: string | null;
+  status: "new" | "contacted" | "qualified" | "converted" | "lost";
+  follow_up_count: number;
+  next_follow_up_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeadActivity {
+  id: string;
+  lead_id: string;
+  user_id: string;
+  type: "auto_reply" | "follow_up" | "note" | "status_change" | "email_sent";
+  description: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export interface WorkflowTemplate {

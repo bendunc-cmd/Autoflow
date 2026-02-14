@@ -16,6 +16,8 @@ import {
   X,
   ChevronDown,
   Bell,
+  Users,
+  Building,
 } from "lucide-react";
 
 interface DashboardShellProps {
@@ -26,7 +28,9 @@ interface DashboardShellProps {
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+  { href: "/dashboard/leads", label: "Leads", icon: Users },
   { href: "/dashboard/workflows", label: "Workflows", icon: GitBranch },
+  { href: "/dashboard/business-setup", label: "Business Setup", icon: Building },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 
