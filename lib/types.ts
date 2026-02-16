@@ -7,7 +7,6 @@ export interface Profile {
   plan: "free" | "starter" | "pro";
   created_at: string;
   updated_at: string;
-  // Business profile fields for AI responses
   business_description: string | null;
   business_services: string | null;
   business_phone: string | null;
