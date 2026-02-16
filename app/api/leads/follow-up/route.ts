@@ -4,7 +4,6 @@ import { generateFollowUp } from "@/lib/ai-engine";
 import { sendEmail } from "@/lib/email-service";
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret to prevent unauthorized access
   const authHeader = request.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -13,13 +12,12 @@ export async function GET(request: NextRequest) {
   const supabase = createAdminClient();
   const now = new Date().toISOString();
 
-  // Find leads due for follow-up
   const { data: leads, error } = await supabase
     .from("leads")
     .select("*, profiles!leads_user_id_fkey(*)")
     .lte("next_follow_up_at", now)
     .in("status", ["new", "contacted"])
-    .lt("follow_up_count", 3) // Max 3 follow-ups
+    .lt("follow_up_count", 3)
     .order("next_follow_up_at", { ascending: true })
     .limit(20);
 
@@ -34,15 +32,11 @@ export async function GET(request: NextRequest) {
   for (const lead of leads) {
     const profile = lead.profiles;
     if (!profile || !profile.auto_reply_enabled) continue;
-
     processed++;
 
     try {
-      // Generate AI follow-up
       const followUpBody = await generateFollowUp(
-        lead.name,
-        lead.message,
-        lead.follow_up_count + 1,
+        lead.name, lead.message, lead.follow_up_count + 1,
         {
           businessName: profile.business_name || "Business",
           businessDescription: profile.business_description,
@@ -54,7 +48,6 @@ export async function GET(request: NextRequest) {
         }
       );
 
-      // Send follow-up email
       const result = await sendEmail({
         to: lead.email,
         subject: `Following up — ${profile.business_name || "Business"}`,
@@ -65,15 +58,12 @@ export async function GET(request: NextRequest) {
 
       if (result.success) {
         sent++;
-
-        // Calculate next follow-up (each one waits longer)
         const newFollowUpCount = lead.follow_up_count + 1;
         const hoursUntilNext = newFollowUpCount >= 3 ? null : newFollowUpCount * 48;
         const nextFollowUp = hoursUntilNext
           ? new Date(Date.now() + hoursUntilNext * 60 * 60 * 1000).toISOString()
           : null;
 
-        // Update lead
         await supabase
           .from("leads")
           .update({
@@ -84,16 +74,12 @@ export async function GET(request: NextRequest) {
           })
           .eq("id", lead.id);
 
-        // Log activity
         await supabase.from("lead_activities").insert({
           lead_id: lead.id,
           user_id: lead.user_id,
           type: "follow_up",
           description: `Follow-up #${newFollowUpCount} sent to ${lead.email}`,
-          metadata: {
-            email_id: result.id,
-            follow_up_number: newFollowUpCount,
-          },
+          metadata: { email_id: result.id, follow_up_number: newFollowUpCount },
         });
       }
     } catch (err) {
@@ -101,10 +87,5 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({
-    success: true,
-    processed,
-    sent,
-    timestamp: now,
-  });
+  return NextResponse.json({ success: true, processed, sent, timestamp: now });
 }
