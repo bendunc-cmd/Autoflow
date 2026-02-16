@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase-admin";
 import { analyseLead } from "@/lib/ai-engine";
-import { sendEmail, sendLeadNotification } from "@/lib/email-service";
+import { sendEmail } from "@/lib/email-service";
 
 // Allow CORS for external form submissions
 const corsHeaders = {
@@ -46,25 +46,41 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (profileError || !profile) {
+      console.error("Profile lookup error:", profileError);
       return NextResponse.json(
         { error: "Invalid API key" },
         { status: 401, headers: corsHeaders }
       );
     }
 
+    console.log("✅ Profile found:", profile.business_name);
+
     // Check if auto-reply is enabled
     const autoReplyEnabled = profile.auto_reply_enabled !== false;
 
     // Analyse the lead with AI
-    const analysis = await analyseLead(name, message, {
-      businessName: profile.business_name || "Business",
-      businessDescription: profile.business_description,
-      businessServices: profile.business_services,
-      businessPhone: profile.business_phone,
-      businessAddress: profile.business_address,
-      responseTone: profile.response_tone,
-      industry: profile.industry,
-    });
+    let analysis;
+    try {
+      analysis = await analyseLead(name, message, {
+        businessName: profile.business_name || "Business",
+        businessDescription: profile.business_description,
+        businessServices: profile.business_services,
+        businessPhone: profile.business_phone,
+        businessAddress: profile.business_address,
+        responseTone: profile.response_tone,
+        industry: profile.industry,
+      });
+      console.log("✅ AI analysis complete:", analysis.urgency, analysis.category);
+    } catch (aiError) {
+      console.error("❌ AI analysis failed:", aiError);
+      // Fallback analysis so the lead still gets saved
+      analysis = {
+        urgency: "warm" as const,
+        category: "General Enquiry",
+        summary: `New enquiry from ${name}: ${message.substring(0, 100)}`,
+        suggestedResponse: `Hi ${name},\n\nThank you for reaching out to ${profile.business_name || "us"}. We've received your message and will get back to you as soon as possible.\n\nBest regards,\n${profile.business_name || "The Team"}`,
+      };
+    }
 
     // Calculate follow-up time based on urgency
     const followUpHours = analysis.urgency === "hot" ? 2 : analysis.urgency === "warm" ? 24 : 48;
@@ -92,66 +108,79 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (leadError) {
-      console.error("Lead insert error:", leadError);
+      console.error("❌ Lead insert error:", leadError);
       return NextResponse.json(
-        { error: "Failed to save lead" },
+        { error: "Failed to save lead", details: leadError.message },
         { status: 500, headers: corsHeaders }
       );
     }
 
+    console.log("✅ Lead saved:", lead.id);
+
     // Send auto-reply to customer if enabled
     let autoReplySent = false;
     if (autoReplyEnabled) {
-      const emailResult = await sendEmail({
-        to: email,
-        subject: `Re: Your enquiry to ${profile.business_name || "us"}`,
-        body: analysis.suggestedResponse,
-        businessName: profile.business_name || "Business",
-        replyTo: profile.email,
-      });
-
-      if (emailResult.success) {
-        autoReplySent = true;
-
-        // Update lead with sent response
-        await supabase
-          .from("leads")
-          .update({ ai_response_sent: analysis.suggestedResponse })
-          .eq("id", lead.id);
-
-        // Log the auto-reply activity
-        await supabase.from("lead_activities").insert({
-          lead_id: lead.id,
-          user_id: profile.id,
-          type: "auto_reply",
-          description: `AI auto-reply sent to ${email}`,
-          metadata: {
-            email_id: emailResult.id,
-            response_preview: analysis.suggestedResponse.substring(0, 200),
-          },
+      try {
+        const emailResult = await sendEmail({
+          to: email,
+          subject: `Re: Your enquiry to ${profile.business_name || "us"}`,
+          body: analysis.suggestedResponse,
+          businessName: profile.business_name || "Business",
+          replyTo: profile.email,
         });
+
+        if (emailResult.success) {
+          autoReplySent = true;
+          console.log("✅ Auto-reply sent to:", email);
+
+          // Update lead with sent response
+          await supabase
+            .from("leads")
+            .update({ ai_response_sent: analysis.suggestedResponse })
+            .eq("id", lead.id);
+
+          // Log the auto-reply activity
+          await supabase.from("lead_activities").insert({
+            lead_id: lead.id,
+            user_id: profile.id,
+            type: "auto_reply",
+            description: `AI auto-reply sent to ${email}`,
+            metadata: {
+              email_id: emailResult.id,
+              response_preview: analysis.suggestedResponse.substring(0, 200),
+            },
+          });
+        } else {
+          console.error("❌ Auto-reply failed:", emailResult.error);
+        }
+      } catch (emailError) {
+        console.error("❌ Auto-reply error:", emailError);
+        // Don't fail the whole request if email fails
       }
     }
 
     // Send notification to business owner
-    await sendLeadNotification({
-      to: profile.email,
-      leadName: name,
-      leadEmail: email,
-      leadMessage: message,
-      urgency: analysis.urgency,
-      category: analysis.category,
-      aiSummary: analysis.summary,
-      businessName: profile.business_name || "Business",
-    });
+    try {
+      await sendEmail({
+        to: profile.email,
+        subject: `🔔 New ${analysis.urgency.toUpperCase()} lead: ${name}`,
+        body: `New lead received!\n\nFrom: ${name}\nEmail: ${email}\nPhone: ${phone || "Not provided"}\nUrgency: ${analysis.urgency}\nCategory: ${analysis.category}\n\nSummary: ${analysis.summary}\n\nOriginal message:\n${message}\n\nView in dashboard: https://autoflow-puce.vercel.app/dashboard/leads`,
+        businessName: "AutoFlow AI",
+        replyTo: email,
+      });
+      console.log("✅ Notification sent to:", profile.email);
 
-    // Log notification activity
-    await supabase.from("lead_activities").insert({
-      lead_id: lead.id,
-      user_id: profile.id,
-      type: "note",
-      description: `Lead notification sent to ${profile.email}`,
-    });
+      // Log notification activity
+      await supabase.from("lead_activities").insert({
+        lead_id: lead.id,
+        user_id: profile.id,
+        type: "note",
+        description: `Lead notification sent to ${profile.email}`,
+      });
+    } catch (notifyError) {
+      console.error("❌ Notification email error:", notifyError);
+      // Don't fail the whole request if notification fails
+    }
 
     return NextResponse.json(
       {
@@ -165,9 +194,9 @@ export async function POST(request: NextRequest) {
       { status: 200, headers: corsHeaders }
     );
   } catch (err) {
-    console.error("Webhook error:", err);
+    console.error("❌ Webhook error:", err);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Internal server error", details: err instanceof Error ? err.message : "Unknown error" },
       { status: 500, headers: corsHeaders }
     );
   }
