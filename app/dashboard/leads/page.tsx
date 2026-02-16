@@ -62,7 +62,6 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads();
-    // Auto-refresh every 30 seconds
     const interval = setInterval(fetchLeads, 30000);
     return () => clearInterval(interval);
   }, [fetchLeads]);
@@ -107,7 +106,6 @@ export default function LeadsPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-display font-bold text-white">Leads</h1>
@@ -117,7 +115,6 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* Stats bar */}
       <div className="grid grid-cols-4 gap-3">
         <div className="glass-card p-4 text-center">
           <p className="text-2xl font-bold text-white">{stats.total}</p>
@@ -137,7 +134,6 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-surface-500" />
@@ -175,7 +171,6 @@ export default function LeadsPage() {
         </div>
       </div>
 
-      {/* Leads list */}
       {filtered.length > 0 ? (
         <div className="space-y-3">
           {filtered.map((lead) => {
@@ -186,7 +181,6 @@ export default function LeadsPage() {
 
             return (
               <div key={lead.id} className="glass-card overflow-hidden">
-                {/* Lead row */}
                 <button
                   onClick={() => setExpandedLead(isExpanded ? null : lead.id)}
                   className="w-full p-5 flex items-start sm:items-center justify-between gap-4 text-left hover:bg-surface-800/30 transition-colors"
@@ -243,10 +237,8 @@ export default function LeadsPage() {
                   )}
                 </button>
 
-                {/* Expanded detail */}
                 {isExpanded && (
                   <div className="px-5 pb-5 border-t border-surface-700/40 pt-4 space-y-4 animate-fade-in">
-                    {/* Contact info */}
                     <div className="flex flex-wrap gap-3">
                       <a
                         href={`mailto:${lead.email}`}
@@ -266,7 +258,6 @@ export default function LeadsPage() {
                       )}
                     </div>
 
-                    {/* Original message */}
                     <div>
                       <p className="text-xs font-medium text-surface-400 mb-1.5 flex items-center gap-1">
                         <MessageSquare className="w-3 h-3" />
@@ -277,7 +268,6 @@ export default function LeadsPage() {
                       </div>
                     </div>
 
-                    {/* AI Response */}
                     {lead.ai_response_sent && (
                       <div>
                         <p className="text-xs font-medium text-brand-400 mb-1.5 flex items-center gap-1">
@@ -290,7 +280,6 @@ export default function LeadsPage() {
                       </div>
                     )}
 
-                    {/* Follow-up info */}
                     {lead.next_follow_up_at && (
                       <div className="flex items-center gap-2 text-xs text-surface-500">
                         <Clock className="w-3 h-3" />
@@ -305,7 +294,6 @@ export default function LeadsPage() {
                       </div>
                     )}
 
-                    {/* Status update buttons */}
                     <div className="flex flex-wrap gap-2 pt-2">
                       <p className="text-xs text-surface-500 self-center mr-1">
                         Update status:
@@ -363,3 +351,4 @@ export default function LeadsPage() {
     </div>
   );
 }
+
