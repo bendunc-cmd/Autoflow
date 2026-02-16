@@ -4,9 +4,7 @@ import { randomBytes } from "crypto";
 
 export async function POST(request: NextRequest) {
   const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -14,8 +12,6 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-
-    // Generate API key if requested
     let apiKey = body.api_key;
     if (body.generate_api_key) {
       apiKey = `af_${randomBytes(24).toString("hex")}`;
@@ -47,14 +43,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({
-      success: true,
-      ...(apiKey ? { api_key: apiKey } : {}),
-    });
+    return NextResponse.json({ success: true, ...(apiKey ? { api_key: apiKey } : {}) });
   } catch {
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
