@@ -43,7 +43,7 @@ export async function analyseLead(
     messages: [
       {
         role: "user",
-        content: `You are an AI assistant for "${business.businessName}", a small Australian business. Analyse this incoming lead enquiry.
+        content: `You are an AI assistant for "${business.businessName}", a small Australian business. Analyse this incoming lead enquiry and generate a response.
 
 BUSINESS INFO:
 ${businessInfo || "No additional business info provided."}
@@ -57,7 +57,7 @@ Respond with ONLY valid JSON (no markdown, no backticks) in this exact format:
   "urgency": "hot" or "warm" or "cold",
   "category": "short category label like Repair, Quote Request, General Enquiry, Emergency, Booking, Complaint",
   "summary": "One sentence summary of what the customer needs",
-  "suggestedResponse": "A ${tone} email response to send to the customer. Keep it concise (3-5 sentences). Address them by first name. Mention the business name."
+  "suggestedResponse": "A ${tone} email response to send to the customer. Keep it concise (3-5 sentences). Address them by first name. Mention the business name. If it seems urgent, acknowledge the urgency. Don't make specific promises about timing unless the business info suggests availability. Sign off with the business name. Use Australian English spelling."
 }
 
 URGENCY GUIDE:
@@ -71,18 +71,62 @@ URGENCY GUIDE:
   try {
     const text =
       message.content[0].type === "text" ? message.content[0].text : "";
-    
+
     // Strip markdown code fences if present
     const cleanText = text
       .replace(/```json\s*/gi, "")
       .replace(/```\s*/gi, "")
       .trim();
-    
+
     const parsed = JSON.parse(cleanText) as LeadAnalysis;
+
+    // Validate urgency value
+    if (!["hot", "warm", "cold"].includes(parsed.urgency)) {
+      parsed.urgency = "warm";
+    }
+
     return parsed;
   } catch (parseError) {
     console.error("❌ AI response parse error:", parseError);
     console.error("Raw AI response:", message.content);
     throw new Error("Failed to parse AI response as JSON");
   }
+}
+
+export async function generateFollowUp(
+  leadName: string,
+  originalMessage: string,
+  followUpNumber: number,
+  business: BusinessContext
+): Promise<string> {
+  const tone = business.responseTone || "friendly";
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 512,
+    messages: [
+      {
+        role: "user",
+        content: `You are an AI assistant for "${business.businessName}", a small Australian business. Generate a follow-up email for a lead who hasn't responded.
+
+BUSINESS: ${business.businessName}
+CUSTOMER: ${leadName}
+ORIGINAL ENQUIRY: "${originalMessage}"
+FOLLOW-UP NUMBER: ${followUpNumber} (1 = first follow-up, 2 = second, etc.)
+TONE: ${tone}
+
+Write a short, ${tone} follow-up email (2-4 sentences). Use Australian English. Address them by first name. Don't be pushy. If this is follow-up #2 or higher, keep it very brief and mention you don't want to bother them.
+
+Respond with ONLY the email body text, no subject line, no JSON.`,
+      },
+    ],
+  });
+
+  const text =
+    message.content[0].type === "text" ? message.content[0].text : "";
+
+  return (
+    text ||
+    `Hi ${leadName.split(" ")[0]},\n\nJust following up on your earlier enquiry. We'd love to help if you're still interested.\n\nCheers,\n${business.businessName}`
+  );
 }
