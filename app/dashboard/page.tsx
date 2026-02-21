@@ -251,7 +251,7 @@ export default async function DashboardPage() {
           <div className="space-y-2.5">
             {Object.entries(sourceBreakdown)
               .sort(([, a], [, b]) => (b as number) - (a as number))
-              .map(([source, count]) => {
+             .map(([source, count]: [string, number]) => {
                 const cfg = sourceIcons[source] || sourceIcons.web;
                 const Icon = cfg.icon;
                 const pct = totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0;
