@@ -28,6 +28,12 @@ import {
   Plus,
   X,
   UserPlus,
+  Activity,
+  Send,
+  Bell,
+  CheckCircle,
+  AlertCircle,
+  FileText,
 } from "lucide-react";
 
 // ── Urgency config ──────────────────────────────────────────
@@ -115,6 +121,8 @@ export default function LeadsPage() {
   const [filterSource, setFilterSource] = useState<string>("all");
   const [expandedLead, setExpandedLead] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [activities, setActivities] = useState<Record<string, any[]>>({});
+  const [loadingActivities, setLoadingActivities] = useState<string | null>(null);
 
   // ── Add Lead Modal state ────────────────────────────────────
   const [showAddModal, setShowAddModal] = useState(false);
@@ -151,7 +159,30 @@ export default function LeadsPage() {
       body: JSON.stringify({ lead_id: leadId, status: newStatus }),
     });
     await fetchLeads();
+    // Refresh activities for this lead
+    await fetchActivities(leadId);
     setUpdatingId(null);
+  }
+
+  async function fetchActivities(leadId: string) {
+    if (activities[leadId]) return; // Already loaded
+    setLoadingActivities(leadId);
+    const { data } = await supabase
+      .from("lead_activities")
+      .select("*")
+      .eq("lead_id", leadId)
+      .order("created_at", { ascending: true });
+    setActivities((prev) => ({ ...prev, [leadId]: data || [] }));
+    setLoadingActivities(null);
+  }
+
+  function toggleExpand(leadId: string) {
+    if (expandedLead === leadId) {
+      setExpandedLead(null);
+    } else {
+      setExpandedLead(leadId);
+      fetchActivities(leadId);
+    }
   }
 
   // ── Add Lead handler ────────────────────────────────────────
@@ -353,7 +384,7 @@ export default function LeadsPage() {
                 {/* ── Card Header (always visible) ──────── */}
                 <div
                   className="p-4 cursor-pointer hover:bg-surface-800/30 transition-colors"
-                  onClick={() => setExpandedLead(isExpanded ? null : lead.id)}
+                  onClick={() => toggleExpand(lead.id)}
                 >
                   <div className="flex items-start gap-3">
                     {/* Source icon */}
@@ -498,6 +529,61 @@ export default function LeadsPage() {
                           )}
                         </div>
                       </div>
+                    </div>
+
+                    {/* ── Activity Timeline ─────────────────── */}
+                    <div className="mt-4 pt-4 border-t border-surface-700/50">
+                      <div className="flex items-center gap-1.5 text-xs font-medium text-surface-400 mb-3">
+                        <Activity className="w-3 h-3" />
+                        Activity Timeline
+                      </div>
+                      {loadingActivities === lead.id ? (
+                        <div className="flex items-center gap-2 text-sm text-surface-500 py-2">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Loading timeline...
+                        </div>
+                      ) : (activities[lead.id] || []).length === 0 ? (
+                        <p className="text-xs text-surface-600">No activity recorded yet.</p>
+                      ) : (
+                        <div className="relative ml-2">
+                          {/* Vertical line */}
+                          <div className="absolute left-[7px] top-2 bottom-2 w-px bg-surface-700/50" />
+                          <div className="space-y-3">
+                            {(activities[lead.id] || []).map((act: any, i: number) => {
+                              const actConfig: Record<string, { icon: any; color: string }> = {
+                                auto_reply: { icon: Send, color: "text-brand-400" },
+                                email_sent: { icon: Send, color: "text-brand-400" },
+                                status_change: { icon: CheckCircle, color: "text-amber-400" },
+                                follow_up: { icon: Bell, color: "text-orange-400" },
+                                note: { icon: FileText, color: "text-teal-400" },
+                              };
+                              const ac = actConfig[act.type] || { icon: AlertCircle, color: "text-surface-400" };
+                              const ActIcon = ac.icon;
+
+                              return (
+                                <div key={act.id || i} className="flex items-start gap-3 relative">
+                                  <div className={`w-4 h-4 rounded-full bg-surface-800 border border-surface-700 flex items-center justify-center flex-shrink-0 z-10`}>
+                                    <ActIcon className={`w-2.5 h-2.5 ${ac.color}`} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-xs text-surface-300 leading-relaxed">
+                                      {act.description}
+                                    </p>
+                                    <p className="text-xs text-surface-600 mt-0.5">
+                                      {new Date(act.created_at).toLocaleDateString("en-AU", {
+                                        day: "numeric",
+                                        month: "short",
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
