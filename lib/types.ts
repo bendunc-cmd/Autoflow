@@ -20,7 +20,7 @@ export interface Lead {
   id: string;
   user_id: string;
   name: string;
-  email: string;
+  email: string | null;
   phone: string | null;
   message: string;
   source: string | null;
