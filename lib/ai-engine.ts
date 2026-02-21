@@ -21,6 +21,18 @@ interface BusinessContext {
   industry: string | null;
 }
 
+interface SMSResponse {
+  message: string;
+  shouldEscalate: boolean;
+  escalationReason?: string;
+  newStage?: string;
+  extractedInfo?: {
+    name?: string;
+    email?: string;
+    needs?: string;
+  };
+}
+
 export async function analyseLead(
   leadName: string,
   leadMessage: string,
@@ -129,4 +141,105 @@ Respond with ONLY the email body text, no subject line, no JSON.`,
     text ||
     `Hi ${leadName.split(" ")[0]},\n\nJust following up on your earlier enquiry. We'd love to help if you're still interested.\n\nCheers,\n${business.businessName}`
   );
+}
+
+export async function generateSMSResponse(
+  customerMessage: string,
+  conversationHistory: { role: string; content: string }[],
+  business: BusinessContext,
+  currentStage: string
+): Promise<SMSResponse> {
+  const tone = business.responseTone || "friendly";
+  const businessInfo = [
+    business.businessDescription && `Business: ${business.businessDescription}`,
+    business.businessServices && `Services: ${business.businessServices}`,
+    business.businessPhone && `Phone: ${business.businessPhone}`,
+    business.businessAddress && `Address: ${business.businessAddress}`,
+    business.industry && `Industry: ${business.industry}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  // Format conversation history
+  const historyText = conversationHistory
+    .map((msg) => `${msg.role === "customer" ? "Customer" : "You"}: ${msg.content}`)
+    .join("\n");
+
+  const message = await anthropic.messages.create({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 512,
+    messages: [
+      {
+        role: "user",
+        content: `You are an AI SMS assistant for "${business.businessName}", a small Australian business. You're texting with a potential customer. Your job is to be helpful, qualify the lead, and collect details so the business owner can follow up.
+
+BUSINESS INFO:
+${businessInfo || "No additional business info provided."}
+
+TONE: ${tone} (keep it natural, like a real person texting — not robotic)
+CURRENT CONVERSATION STAGE: ${currentStage}
+
+CONVERSATION SO FAR:
+${historyText || "This is the start of the conversation."}
+
+CUSTOMER'S LATEST MESSAGE:
+"${customerMessage}"
+
+RULES:
+1. Keep your reply SHORT — under 160 characters if possible, max 300 characters
+2. Sound like a real person, not a chatbot. Use Australian English
+3. Never make up pricing or availability — if asked about price, say "Let me get the boss to sort out a quote for you"
+4. Try to collect: their name, what they need, when they need it, their location
+5. If they seem upset, want specific pricing, or the conversation is getting complex, ESCALATE to the business owner
+6. Move through stages naturally: greeting → qualifying (what do they need?) → details (when/where?) → booking/handoff
+7. Don't ask more than one question at a time
+8. If they give you their name, use it
+
+RESPOND WITH ONLY VALID JSON (no markdown, no backticks):
+{
+  "message": "Your SMS reply text",
+  "shouldEscalate": false,
+  "escalationReason": null,
+  "newStage": "qualifying",
+  "extractedInfo": {
+    "name": null,
+    "email": null,
+    "needs": null
+  }
+}
+
+For newStage, use: "greeting", "qualifying", "details", "booking", "complete"
+Set shouldEscalate to true ONLY if: customer asks about pricing, is upset/angry, wants to speak to someone, conversation is too complex, or you've collected enough info to hand off.`,
+      },
+    ],
+  });
+
+  try {
+    const text =
+      message.content[0].type === "text" ? message.content[0].text : "";
+
+    const cleanText = text
+      .replace(/```json\s*/gi, "")
+      .replace(/```\s*/gi, "")
+      .trim();
+
+    const parsed = JSON.parse(cleanText) as SMSResponse;
+
+    // Ensure message isn't too long for SMS
+    if (parsed.message.length > 320) {
+      parsed.message = parsed.message.substring(0, 317) + "...";
+    }
+
+    return parsed;
+  } catch (parseError) {
+    console.error("❌ SMS AI response parse error:", parseError);
+    console.error("Raw AI response:", message.content);
+    // Return a safe fallback
+    return {
+      message: `Thanks for your message! Let me get someone from ${business.businessName} to help you out. They'll be in touch shortly.`,
+      shouldEscalate: true,
+      escalationReason: "AI failed to generate response",
+      newStage: currentStage,
+    };
+  }
 }
