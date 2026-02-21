@@ -250,7 +250,7 @@ export default async function DashboardPage() {
           </div>
           <div className="space-y-2.5">
             {Object.entries(sourceBreakdown)
-              .sort(([, a], [, b]) => b - a)
+              .sort(([, a], [, b]) => (b as number) - (a as number))
               .map(([source, count]) => {
                 const cfg = sourceIcons[source] || sourceIcons.web;
                 const Icon = cfg.icon;
