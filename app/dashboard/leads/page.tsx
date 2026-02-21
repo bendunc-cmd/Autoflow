@@ -147,8 +147,31 @@ export default function LeadsPage() {
 
   useEffect(() => {
     fetchLeads();
-    const interval = setInterval(fetchLeads, 30000);
-    return () => clearInterval(interval);
+
+    // ── Supabase Realtime subscription ──────────────────────
+    const channel = supabase
+      .channel("leads-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "leads",
+        },
+        () => {
+          // Refresh leads on any insert, update, or delete
+          fetchLeads();
+        }
+      )
+      .subscribe();
+
+    // Fallback polling every 60s in case realtime drops
+    const interval = setInterval(fetchLeads, 60000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
   }, [fetchLeads]);
 
   async function updateStatus(leadId: string, newStatus: string) {
@@ -158,8 +181,13 @@ export default function LeadsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lead_id: leadId, status: newStatus }),
     });
+    // Clear cached activities so timeline refreshes
+    setActivities((prev) => {
+      const next = { ...prev };
+      delete next[leadId];
+      return next;
+    });
     await fetchLeads();
-    // Refresh activities for this lead
     await fetchActivities(leadId);
     setUpdatingId(null);
   }
