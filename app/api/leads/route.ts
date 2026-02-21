@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase-server";
 
-// ── PATCH: Update lead status ───────────────────────────────
 export async function PATCH(request: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -45,7 +44,6 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// ── POST: Create a new lead manually ────────────────────────
 export async function POST(request: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -60,26 +58,41 @@ export async function POST(request: NextRequest) {
 
     if (!name || (!phone && !email)) {
       return NextResponse.json(
-        { error: "Name and at least one contact method (phone or email) required" },
+        { error: "Name and at least one contact method required" },
         { status: 400 }
       );
     }
 
-    // ── Get business profile for AI context ──────────────
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("business_name, business_services, industry")
-      .eq("id", user.id)
+    const { data: lead, error: leadError } = await supabase
+      .from("leads")
+      .insert({
+        user_id: user.id,
+        name,
+        phone: phone || null,
+        email: email || null,
+        message: message || "Manual lead entry",
+        source: "manual",
+        urgency: "warm",
+        category: "Manual Entry",
+        ai_summary: message || "Manually entered lead.",
+        status: "new",
+      })
+      .select()
       .single();
 
-    // ── AI Analysis (if message provided) ────────────────
-    let urgency = "warm";
-    let category = "Manual Entry";
-    let ai_summary = "Manually entered lead.";
+    if (leadError) {
+      return NextResponse.json({ error: leadError.message }, { status: 500 });
+    }
 
-    if (message && message.trim().length > 10) {
-      try {
-        const Anthropic = (await import("@anthropic-ai/sdk")).default;
-        const anthropic = new Anthropic();
+    await supabase.from("lead_activities").insert({
+      lead_id: lead.id,
+      user_id: user.id,
+      type: "note",
+      description: "Lead created manually from dashboard",
+    });
 
-        const aiResponse = await anthropic.messages.create({
+    return NextResponse.json({ success: true, lead });
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
