@@ -29,7 +29,7 @@ interface DashboardShellProps {
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/leads", label: "Leads", icon: Users },
-  { href: "/dashboard/workflows", label: "Workflows", icon: GitBranch },
+  { href: "/dashboard/workflows", label: "Automations", icon: Zap },
   { href: "/dashboard/business-setup", label: "Business Setup", icon: Building },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
