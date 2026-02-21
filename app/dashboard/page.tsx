@@ -249,9 +249,9 @@ export default async function DashboardPage() {
             <h2 className="text-sm font-medium text-white">Lead Sources</h2>
           </div>
           <div className="space-y-2.5">
-            {Object.entries(sourceBreakdown)
-              .sort(([, a], [, b]) => (b as number) - (a as number))
-             .map(([source, count]: [string, number]) => {
+           {Object.entries(sourceBreakdown as Record<string, number>)
+              .sort((a, b) => b[1] - a[1])
+              .map(([source, count]) => {
                 const cfg = sourceIcons[source] || sourceIcons.web;
                 const Icon = cfg.icon;
                 const pct = totalLeads > 0 ? Math.round((count / totalLeads) * 100) : 0;
