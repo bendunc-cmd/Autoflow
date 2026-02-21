@@ -217,7 +217,7 @@ export default function DashboardShell({
         </header>
 
         {/* Page content */}
-        <main className="flex-1 p-6 lg:p-8">{children}</main>
+        <main className="flex-1 p-6 lg:p-8 overflow-y-auto">{children}</main>
       </div>
     </div>
   );
