@@ -481,6 +481,11 @@ export async function POST(request: NextRequest) {
       if (aiResponse.extractedInfo.name) updates.name = aiResponse.extractedInfo.name;
       if (aiResponse.extractedInfo.email) updates.email = aiResponse.extractedInfo.email;
       if (aiResponse.extractedInfo.needs) updates.ai_summary = aiResponse.extractedInfo.needs;
+      if (aiResponse.extractedInfo.address) {
+        // Append address to summary since leads table doesn't have an address column
+        const currentSummary = updates.ai_summary || lead.ai_summary || "";
+        updates.ai_summary = currentSummary ? `${currentSummary} | Address: ${aiResponse.extractedInfo.address}` : `Address: ${aiResponse.extractedInfo.address}`;
+      }
       if (Object.keys(updates).length > 0) {
         updates.updated_at = new Date().toISOString();
         await supabase.from("leads").update(updates).eq("id", lead.id);
