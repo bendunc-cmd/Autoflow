@@ -10,9 +10,12 @@ export async function POST(request: NextRequest) {
     const dialCallStatus = formData.get("DialCallStatus") as string;
     const callerNumber = formData.get("From") as string || formData.get("Caller") as string;
     const calledNumber = formData.get("To") as string || formData.get("Called") as string;
-    const callerNumber2 = formData.get("Caller") as string;
 
-    console.log(`📞 Call status update: ${callSid} - ${dialCallStatus}`);
+    // Recording callback fields (sent when <Record> action fires)
+    const recordingUrl = formData.get("RecordingUrl") as string | null;
+    const recordingDuration = formData.get("RecordingDuration") as string | null;
+
+    console.log(`📞 Call status update: ${callSid} - dialCallStatus: ${dialCallStatus}, recordingUrl: ${recordingUrl ? "yes" : "no"}`);
 
     const supabase = createAdminClient();
 
@@ -31,42 +34,83 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if call was missed (not answered)
+    // Check if call was missed (not answered) — DIRECT CALL flow
     const missedStatuses = ["no-answer", "busy", "failed", "cancelled"];
     const isMissed = missedStatuses.includes(dialCallStatus);
 
-    if (isMissed) {
-      console.log(`📵 Missed call from ${callerNumber} to ${profile.business_name}`);
+    // Check if this is a FORWARDED CALL that completed voicemail recording
+    // When a forwarded call hits <Record action="...voice/status">, Twilio sends
+    // the recording data here but dialCallStatus will be null/undefined
+    const isForwardedVoicemail = !dialCallStatus && recordingUrl;
+
+    // Also check: look up the original call_event to see if it was forwarded
+    let isForwardedCall = false;
+    if (!isMissed && !isForwardedVoicemail) {
+      const { data: callEvent } = await supabase
+        .from("call_events")
+        .select("forwarded_from")
+        .eq("twilio_call_sid", callSid)
+        .single();
+      if (callEvent?.forwarded_from) {
+        isForwardedCall = true;
+      }
+    }
+
+    const shouldProcessAsMissed = isMissed || isForwardedVoicemail || isForwardedCall;
+
+    if (shouldProcessAsMissed) {
+      const reason = isMissed ? "direct missed call" : isForwardedVoicemail ? "forwarded call voicemail" : "forwarded call";
+      console.log(`📵 Processing as missed call (${reason}) from ${callerNumber} to ${profile.business_name}`);
 
       // ============================================
-      // STEP 1: Create lead — wrapped in its OWN try/catch
+      // STEP 1: Check if a lead already exists for this call
+      // (The recording callback might have already created one)
       // ============================================
       let lead: any = null;
-      try {
-        const { data: leadData, error: leadError } = await supabase
-          .from("leads")
-          .insert({
-            user_id: profile.id,
-            name: callerNumber,
-            phone: callerNumber,
-            message: `Missed call from ${callerNumber}`,
-            source: "missed_call",
-            urgency: "hot",
-            category: "Missed Call",
-            ai_summary: "Customer called but nobody answered. Automatic text-back sent.",
-            status: "new",
-          })
-          .select()
-          .single();
 
-        if (leadError) {
-          console.error("❌ Lead insert error:", JSON.stringify(leadError));
-        } else {
-          lead = leadData;
-          console.log("✅ Lead created:", lead.id);
+      // First check if a lead was already created for this caller recently (within last 5 min)
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: existingLead } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("user_id", profile.id)
+        .eq("phone", callerNumber)
+        .gte("created_at", fiveMinAgo)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (existingLead) {
+        lead = existingLead;
+        console.log("✅ Found existing lead:", lead.id);
+      } else {
+        // Create new lead
+        try {
+          const { data: leadData, error: leadError } = await supabase
+            .from("leads")
+            .insert({
+              user_id: profile.id,
+              name: callerNumber,
+              phone: callerNumber,
+              message: `Missed call from ${callerNumber}`,
+              source: "missed_call",
+              urgency: "hot",
+              category: "Missed Call",
+              ai_summary: "Customer called but nobody answered. Automatic text-back sent.",
+              status: "new",
+            })
+            .select()
+            .single();
+
+          if (leadError) {
+            console.error("❌ Lead insert error:", JSON.stringify(leadError));
+          } else {
+            lead = leadData;
+            console.log("✅ Lead created:", lead.id);
+          }
+        } catch (leadCatchError) {
+          console.error("❌ Lead insert exception:", leadCatchError);
         }
-      } catch (leadCatchError) {
-        console.error("❌ Lead insert exception:", leadCatchError);
       }
 
       // ============================================
@@ -75,26 +119,33 @@ export async function POST(request: NextRequest) {
       try {
         const { error: callEventError } = await supabase
           .from("call_events")
-          .insert({
-            user_id: profile.id,
+          .update({
             lead_id: lead?.id,
             status: "missed",
-            caller_number: callerNumber,
             text_back_sent: false, // Will update after SMS attempt
-            twilio_call_sid: callSid,
-          });
+          })
+          .eq("twilio_call_sid", callSid);
 
         if (callEventError) {
-          console.error("❌ Call event insert error:", JSON.stringify(callEventError));
-        } else {
-          console.log("✅ Call event logged");
+          // If update fails (no existing row), try insert
+          await supabase
+            .from("call_events")
+            .insert({
+              user_id: profile.id,
+              lead_id: lead?.id,
+              status: "missed",
+              caller_number: callerNumber,
+              text_back_sent: false,
+              twilio_call_sid: callSid,
+            });
         }
+        console.log("✅ Call event logged");
       } catch (callEventCatchError) {
         console.error("❌ Call event insert exception:", callEventCatchError);
       }
 
       // ============================================
-      // STEP 3: Send the instant text-back SMS — wrapped in its OWN try/catch
+      // STEP 3: Send the instant text-back SMS
       // ============================================
       const tone = profile.response_tone || "friendly";
       const businessName = profile.business_name || "us";
@@ -116,7 +167,6 @@ export async function POST(request: NextRequest) {
         console.log("✅ Text-back SMS sent:", messageId);
       } catch (smsError) {
         console.error("❌ Failed to send text-back SMS:", smsError);
-        // SMS failed but we continue — lead and call event are already saved
       }
 
       // ============================================
@@ -138,7 +188,6 @@ export async function POST(request: NextRequest) {
             .select()
             .single();
 
-          // Log the outbound text-back message
           if (conversation) {
             await supabase.from("sms_messages").insert({
               conversation_id: conversation.id,
@@ -154,7 +203,7 @@ export async function POST(request: NextRequest) {
       }
 
       // ============================================
-      // STEP 5: Log activity on the lead (only if lead was created)
+      // STEP 5: Log activity on the lead
       // ============================================
       if (lead) {
         try {
@@ -162,7 +211,7 @@ export async function POST(request: NextRequest) {
             lead_id: lead.id,
             user_id: profile.id,
             type: "auto_reply",
-            description: `Missed call detected. Instant text-back sent: "${textBackMessage.substring(0, 80)}..."`,
+            description: `Missed call detected. Instant text-back ${smsSent ? "sent" : "failed"}: "${textBackMessage.substring(0, 80)}..."`,
           });
         } catch (activityError) {
           console.error("❌ Lead activity insert error:", activityError);
@@ -216,11 +265,6 @@ export async function POST(request: NextRequest) {
     return new NextResponse(twiml, {
       headers: { "Content-Type": "text/xml" },
     });
-
-    // If call WAS answered — update the call event
-    // (This code is unreachable due to the return above — keeping for reference.
-    //  In the original code, there was logic here to update call_events for answered calls.
-    //  This should be handled in a separate branch before the TwiML return.)
 
   } catch (error) {
     console.error("❌ Call status webhook error:", error);
