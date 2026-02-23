@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     // If no answer after 20 seconds, trigger voicemail + text-back
     const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="${baseUrl}/api/twilio/voice/status" method="POST">
+  <Dial timeout="15" action="${baseUrl}/api/twilio/voice/status" method="POST">
     <Number statusCallbackEvent="completed" statusCallback="${baseUrl}/api/twilio/voice/status">${profile.forwarding_number}</Number>
   </Dial>
 </Response>`;
