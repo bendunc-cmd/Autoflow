@@ -47,7 +47,7 @@ export default function DashboardShell({
 
   const displayName = profile?.full_name || user.email?.split("@")[0] || "User";
   const businessName = profile?.business_name || "My Business";
-  const plan = profile?.subscription_plan || "free";
+  const plan = (profile as any)?.subscription_plan || "free";
 
   async function handleLogout() {
     await supabase.auth.signOut();
