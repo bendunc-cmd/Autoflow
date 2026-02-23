@@ -9,7 +9,6 @@ import type { Profile } from "@/lib/types";
 import {
   Zap,
   LayoutDashboard,
-  GitBranch,
   Settings,
   LogOut,
   Menu,
@@ -18,6 +17,7 @@ import {
   Bell,
   Users,
   Building,
+  Calendar,
 } from "lucide-react";
 
 interface DashboardShellProps {
@@ -29,6 +29,7 @@ interface DashboardShellProps {
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/leads", label: "Leads", icon: Users },
+  { href: "/dashboard/calendar", label: "Calendar", icon: Calendar },
   { href: "/dashboard/workflows", label: "Automations", icon: Zap },
   { href: "/dashboard/business-setup", label: "Business Setup", icon: Building },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
@@ -45,7 +46,8 @@ export default function DashboardShell({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const displayName = profile?.full_name || user.email?.split("@")[0] || "User";
+  const displayName =
+    profile?.full_name || user.email?.split("@")[0] || "User";
   const businessName = profile?.business_name || "My Business";
   const plan = (profile as any)?.subscription_plan || "free";
 
@@ -67,10 +69,9 @@ export default function DashboardShell({
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:sticky top-0 left-0 z-50 lg:z-0 h-screen w-64 flex flex-col
-          bg-surface-900/95 backdrop-blur-xl border-r border-surface-800/60
-          transform transition-transform duration-300 ease-out
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+        className={`fixed lg:sticky top-0 left-0 z-50 lg:z-0 h-screen w-64 flex flex-col bg-surface-900/95 backdrop-blur-xl border-r border-surface-800/60 transform transition-transform duration-300 ease-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        }`}
       >
         {/* Logo */}
         <div className="p-5 flex items-center justify-between border-b border-surface-800/60">
@@ -102,12 +103,11 @@ export default function DashboardShell({
                 key={item.href}
                 href={item.href}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200
-                  ${
-                    isActive
-                      ? "bg-brand-500/10 text-brand-400 border border-brand-500/20"
-                      : "text-surface-400 hover:text-surface-200 hover:bg-surface-800/60"
-                  }`}
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                  isActive
+                    ? "bg-brand-500/10 text-brand-400 border border-brand-500/20"
+                    : "text-surface-400 hover:text-surface-200 hover:bg-surface-800/60"
+                }`}
               >
                 <item.icon className="w-4.5 h-4.5" />
                 {item.label}
@@ -190,8 +190,12 @@ export default function DashboardShell({
                     />
                     <div className="absolute right-0 mt-2 w-56 z-50 glass-card p-2 shadow-xl shadow-black/20">
                       <div className="px-3 py-2 border-b border-surface-700/50 mb-1">
-                        <p className="text-sm font-medium text-white">{displayName}</p>
-                        <p className="text-xs text-surface-500 truncate">{user.email}</p>
+                        <p className="text-sm font-medium text-white">
+                          {displayName}
+                        </p>
+                        <p className="text-xs text-surface-500 truncate">
+                          {user.email}
+                        </p>
                       </div>
                       <Link
                         href="/dashboard/settings"
