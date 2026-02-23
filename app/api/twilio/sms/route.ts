@@ -302,10 +302,29 @@ export async function POST(request: NextRequest) {
     const currentStage = conversation?.stage || "greeting";
     let availableSlots: string | undefined;
 
+    // Check if a booking already exists for this lead
+    let bookingAlreadyExists = false;
+    if (lead?.id) {
+      const { data: existingBookingCheck } = await supabase
+        .from("bookings")
+        .select("id, booking_date, start_time")
+        .eq("lead_id", lead.id)
+        .neq("status", "cancelled")
+        .limit(1)
+        .single();
+      if (existingBookingCheck) {
+        bookingAlreadyExists = true;
+        // Append booking info to slots so AI knows not to rebook
+        availableSlots = `BOOKING ALREADY EXISTS for this customer (${existingBookingCheck.booking_date} at ${existingBookingCheck.start_time}). Do NOT offer to book again or set wantsToBook to true. Just continue the conversation naturally — collect any remaining details like their address.`;
+      }
+    }
+
     if (
-      currentStage === "booking" ||
-      currentStage === "details" ||
-      messageBody.toLowerCase().match(/book|appointment|schedule|when|available|come out|come over|time/)
+      !bookingAlreadyExists && (
+        currentStage === "booking" ||
+        currentStage === "details" ||
+        messageBody.toLowerCase().match(/book|appointment|schedule|when|available|come out|come over|time/)
+      )
     ) {
       availableSlots = await getAvailableSlots(supabase, profile.id);
     }
@@ -324,25 +343,54 @@ export async function POST(request: NextRequest) {
       const br = aiResponse.bookingRequest;
       console.log(`📅 Booking requested: ${br.preferredDate} at ${br.preferredTime}`);
 
-      if (br.preferredDate && br.preferredTime) {
+      // Check if a booking already exists for this lead to prevent duplicates
+      let existingBooking = null;
+      if (lead?.id) {
+        const { data: existing } = await supabase
+          .from("bookings")
+          .select("id")
+          .eq("lead_id", lead.id)
+          .neq("status", "cancelled")
+          .limit(1)
+          .single();
+        existingBooking = existing;
+      }
+
+      if (br.preferredDate && br.preferredTime && !existingBooking) {
         try {
+          // Re-fetch lead to get the latest extracted info (name, email, address)
+          let latestLead = lead;
+          if (lead?.id) {
+            const { data: refreshed } = await supabase
+              .from("leads")
+              .select("*")
+              .eq("id", lead.id)
+              .single();
+            if (refreshed) latestLead = refreshed;
+          }
+
+          // Extract address from ai_summary if it contains one
+          const summaryText = latestLead?.ai_summary || "";
+          const addressMatch = summaryText.match(/Address:\s*(.+?)(?:\s*\||$)/);
+          const extractedAddress = addressMatch ? addressMatch[1].trim() : "";
+
           // Create the booking
           const { data: booking, error: bookingError } = await supabase
             .from("bookings")
             .insert({
               user_id: profile.id,
-              lead_id: lead?.id,
-              customer_name: lead?.name || customerNumber,
+              lead_id: latestLead?.id,
+              customer_name: latestLead?.name || customerNumber,
               customer_phone: customerNumber,
-              customer_email: lead?.email || null,
-              title: br.jobDescription || lead?.ai_summary || `Job: ${lead?.name || customerNumber}`,
-              description: br.jobDescription || lead?.message || null,
+              customer_email: latestLead?.email || null,
+              title: br.jobDescription || latestLead?.ai_summary?.split("|")[0]?.trim() || `Job: ${latestLead?.name || customerNumber}`,
+              description: br.jobDescription || latestLead?.message || null,
               booking_date: br.preferredDate,
               start_time: br.preferredTime,
               end_time: `${(parseInt(br.preferredTime.split(":")[0]) + 1).toString().padStart(2, "0")}:${br.preferredTime.split(":")[1]}`,
               source: "ai_sms",
               status: "confirmed",
-              notes: `Booked via AI SMS conversation. Customer phone: ${customerNumber}`,
+              notes: `Booked via AI SMS conversation.${extractedAddress ? ` Address: ${extractedAddress}` : ""} Customer phone: ${customerNumber}`,
             })
             .select()
             .single();
@@ -405,6 +453,8 @@ export async function POST(request: NextRequest) {
         } catch (bookingCatchError) {
           console.error("❌ Booking creation exception:", bookingCatchError);
         }
+      } else if (existingBooking) {
+        console.log("⚠️ Booking already exists for this lead — skipping duplicate creation");
       }
     }
 
