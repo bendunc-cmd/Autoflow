@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase-browser";
 import { Zap, Loader2, Mail, Lock, User, Building } from "lucide-react";
 
-export default function SignUpPage() {
+export default function SignupPage() {
   const router = useRouter();
   const supabase = createClient();
   const [fullName, setFullName] = useState("");
@@ -22,6 +22,9 @@ export default function SignUpPage() {
     setLoading(true);
     setError("");
 
+    // Auto-detect timezone from browser
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Adelaide";
+
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -29,6 +32,7 @@ export default function SignUpPage() {
         data: {
           full_name: fullName,
           business_name: businessName,
+          timezone,
         },
         emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
@@ -51,14 +55,16 @@ export default function SignUpPage() {
           <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-6">
             <Mail className="w-8 h-8 text-emerald-400" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-3">Check Your Email</h1>
+          <h3 className="text-2xl font-bold text-white mb-3">Check Your Email</h3>
           <p className="text-surface-400 mb-6">
             We&apos;ve sent a confirmation link to <strong className="text-surface-200">{email}</strong>.
             Click the link in the email to activate your account.
           </p>
-          <Link href="/auth/login" className="btn-secondary">
-            Back to Login
-          </Link>
+          <p>
+            <Link href="/auth/login" className="btn-secondary">
+              Back to Login
+            </Link>
+          </p>
         </div>
       </div>
     );
