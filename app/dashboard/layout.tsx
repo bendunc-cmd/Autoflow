@@ -1,6 +1,8 @@
-import { createClient } from "@/lib/supabase-server";
+import React from "react";
 import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase-server";
 import DashboardShell from "@/components/dashboard/DashboardShell";
+import TimezoneDetector from "@/components/dashboard/TimezoneDetector";
 
 export default async function DashboardLayout({
   children,
@@ -28,6 +30,7 @@ export default async function DashboardLayout({
       user={user}
       profile={profile}
     >
+      <TimezoneDetector />
       {children}
     </DashboardShell>
   );
