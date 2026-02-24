@@ -76,9 +76,6 @@ export default function CalendarPage() {
   const [showDetailModal, setShowDetailModal] = useState<Booking | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showAvailability, setShowAvailability] = useState(false);
-  const [userTimezone, setUserTimezone] = useState<string>(
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "Australia/Adelaide"
-  );
 
   // New booking form
   const [newBooking, setNewBooking] = useState({
@@ -121,33 +118,16 @@ export default function CalendarPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // Fetch user timezone from profile
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("timezone")
-      .eq("id", user.id)
-      .single();
-    if (profile?.timezone) {
-      setUserTimezone(profile.timezone);
-    }
-
     // Fetch bookings for current month range (with buffer)
     const rangeStart = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
     const rangeEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 2, 0);
-
-    const fmtRange = (d: Date) => {
-      const y = d.getFullYear();
-      const m = (d.getMonth() + 1).toString().padStart(2, "0");
-      const day = d.getDate().toString().padStart(2, "0");
-      return `${y}-${m}-${day}`;
-    };
 
     const { data: bookingsData } = await supabase
       .from("bookings")
       .select("*")
       .eq("user_id", user.id)
-      .gte("booking_date", fmtRange(rangeStart))
-      .lte("booking_date", fmtRange(rangeEnd))
+      .gte("booking_date", rangeStart.toISOString().split("T")[0])
+      .lte("booking_date", rangeEnd.toISOString().split("T")[0])
       .order("booking_date", { ascending: true })
       .order("start_time", { ascending: true });
 
@@ -175,27 +155,12 @@ export default function CalendarPage() {
 
   const goToday = () => setCurrentDate(new Date());
 
-  const formatDate = (d: Date) => {
-    const year = d.getFullYear();
-    const month = (d.getMonth() + 1).toString().padStart(2, "0");
-    const day = d.getDate().toString().padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-
-  // Get today's date string in the user's timezone
-  const getTodayStr = () => {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: userTimezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date());
-  };
+  const formatDate = (d: Date) => d.toISOString().split("T")[0];
 
   const getBookingsForDate = (dateStr: string) =>
     bookings.filter((b) => b.booking_date === dateStr && b.status !== "cancelled");
 
-  const isToday = (d: Date) => formatDate(d) === getTodayStr();
+  const isToday = (d: Date) => formatDate(d) === formatDate(new Date());
 
   const handleAddBooking = async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -274,7 +239,7 @@ export default function CalendarPage() {
   const monthDates = getMonthDates();
 
   // Stats
-  const today = getTodayStr();
+  const today = formatDate(new Date());
   const todayBookings = getBookingsForDate(today);
   const weekBookings = bookings.filter((b) => {
     const d = new Date(b.booking_date);
