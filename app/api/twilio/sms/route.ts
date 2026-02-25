@@ -160,6 +160,70 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient();
 
+    // ── Handle CANCEL replies from reminders ────────────
+    if (messageBody.trim().toUpperCase() === "CANCEL") {
+      // Find the most recent confirmed booking for this phone number
+      const { data: booking } = await supabase
+        .from("bookings")
+        .select("*, profiles!bookings_user_id_fkey(business_name, email)")
+        .eq("customer_phone", customerNumber)
+        .eq("status", "confirmed")
+        .gte("booking_date", new Date().toISOString().split("T")[0])
+        .order("booking_date", { ascending: true })
+        .limit(1)
+        .single();
+
+      if (booking) {
+        await supabase
+          .from("bookings")
+          .update({ status: "cancelled" })
+          .eq("id", booking.id);
+
+        const bookingDate = new Date(booking.booking_date);
+        const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const dateLabel = `${dayNames[bookingDate.getDay()]} ${bookingDate.getDate()}/${bookingDate.getMonth() + 1}`;
+
+        await sendSMS(
+          customerNumber,
+          `No worries, your appointment on ${dateLabel} at ${booking.start_time.substring(0, 5)} has been cancelled. Feel free to text us anytime to rebook.`
+        );
+
+        // Notify business owner
+        try {
+          const { sendEmail } = await import("@/lib/email-service");
+          const businessName = (booking as any).profiles?.business_name || "your business";
+          const ownerEmail = (booking as any).profiles?.email;
+          if (ownerEmail) {
+            await sendEmail({
+              to: ownerEmail,
+              subject: `❌ Booking cancelled: ${booking.customer_name} — ${dateLabel}`,
+              html: `
+                <div style="font-family: sans-serif; max-width: 500px;">
+                  <h2 style="color: #ef4444;">❌ Booking Cancelled</h2>
+                  <p><strong>${booking.customer_name}</strong> cancelled their appointment via SMS.</p>
+                  <table style="width: 100%; border-collapse: collapse;">
+                    <tr><td style="padding: 8px; color: #666;">Date</td><td style="padding: 8px;">${dateLabel}</td></tr>
+                    <tr><td style="padding: 8px; color: #666;">Time</td><td style="padding: 8px;">${booking.start_time.substring(0, 5)}</td></tr>
+                    <tr><td style="padding: 8px; color: #666;">Phone</td><td style="padding: 8px;"><a href="tel:${customerNumber}">${customerNumber}</a></td></tr>
+                  </table>
+                  <p style="margin-top: 16px;">View in your <a href="https://autoflow-puce.vercel.app/dashboard/calendar">calendar</a>.</p>
+                </div>
+              `,
+              fromName: "AutoFlow AI",
+            });
+          }
+        } catch (emailError) {
+          console.error("Failed to send cancellation email:", emailError);
+        }
+
+        console.log(`❌ Booking cancelled via SMS: ${booking.id}`);
+        return new NextResponse(
+          `<?xml version="1.0" encoding="UTF-8"?><Response></Response>`,
+          { headers: { "Content-Type": "text/xml" } }
+        );
+      }
+    }
+
     // Look up the business profile by Twilio number
     const { data: profile } = await supabase
       .from("profiles")
