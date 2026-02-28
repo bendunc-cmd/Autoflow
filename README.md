@@ -6,7 +6,7 @@ Smart workflow automation for Australian small businesses. Built with Next.js, S
 
 - **Framework**: Next.js 14 (App Router)
 - **Database & Auth**: Supabase
-- **Styling**: Tailwind CSS
+- **Styling**: Tailwind CSS 
 - **Hosting**: Vercel
 - **Icons**: Lucide React
 
