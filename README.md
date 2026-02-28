@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
   error TEXT
 );
 
+
 ALTER TABLE workflow_runs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can view own runs" ON workflow_runs FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Users can create own runs" ON workflow_runs FOR INSERT WITH CHECK (auth.uid() = user_id);
